@@ -52,6 +52,8 @@ extern crate serde_derive;
 #[macro_use]
 extern crate quote;
 
+use unidecode::unidecode;
+
 pub mod generator;
 
 /// Types from the JSON Schema meta-schema (draft 4).
@@ -141,13 +143,13 @@ fn rename_keyword(prefix: &str, s: &str) -> Option<TokenStream> {
 
     if prefix.is_empty() {
         Some(quote! {
-            #[serde(rename = #s)]
+            // #[serde(rename = #s)]
             #n
         })
     } else {
         let prefix = syn::Ident::new(prefix, Span::call_site());
         Some(quote! {
-            #[serde(rename = #s)]
+            // #[serde(rename = #s)]
             #prefix #n
         })
     }
@@ -471,8 +473,18 @@ impl<'r> Expander<'r> {
         } else if typ.type_.len() == 1 {
             match typ.type_[0] {
                 SimpleTypes::String => {
-                    if typ.enum_.as_ref().map_or(false, |e| e.is_empty()) {
-                        "serde_json::Value".into()
+                    if typ.enum_.as_ref().map_or(false, |e| !e.is_empty()) {
+                        
+                        let name = format!(
+                            "{}{}Enum",
+                            self.current_type.to_pascal_case(),
+                            self.current_field.to_pascal_case()
+                        );
+
+                        let tokens = self.expand_schema(&name, typ);
+                        self.types.push((name.clone(), tokens));
+
+                        name.into()
                     } else {
                         "String".into()
                     }
@@ -639,7 +651,7 @@ impl<'r> Expander<'r> {
                     .enumerate()
                     .map(|(idx, name)| (&values[idx], name))
                     .flat_map(|(value, name)| {
-                        let pascal_case_variant = name.to_pascal_case();
+                        let pascal_case_variant = unidecode(name.to_pascal_case().as_str());
                         let variant_name =
                             rename_keyword("", &pascal_case_variant).unwrap_or_else(|| {
                                 let v = syn::Ident::new(&pascal_case_variant, Span::call_site());
